@@ -4,6 +4,11 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
 import os
+import streamlit_authenticator as stauth
+import yaml
+from yaml.loader import SafeLoader
+from datetime import timedelta
+import time
 
 # Set page config
 st.set_page_config(
@@ -11,6 +16,60 @@ st.set_page_config(
     page_icon="📈",
     layout="wide"
 )
+
+# --- Authentication Setup ---
+CREDENTIALS_FILE = 'hashed_credentials.yml'
+if not os.path.exists(CREDENTIALS_FILE):
+    st.error(f"❌ Credentials file '{CREDENTIALS_FILE}' not found. Please generate it using 'generate_hashed_credentials.py'.")
+    st.stop()
+with open(CREDENTIALS_FILE, 'r') as file:
+    config = yaml.safe_load(file)
+
+# Use config loaded from file
+if 'cookie' not in config:
+    config['cookie'] = {
+        'expiry_days': 0.208,  # 5 hours
+        'key': 'some_signature_key',
+        'name': 'auth_cookie'
+    }
+
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days'],
+    auto_hash=False
+)
+
+try:
+    authenticator.login()
+except Exception as e:
+    st.error(e)
+authentication_status = st.session_state.get('authentication_status')
+
+# --- Idle Timeout ---
+# Initialize last activity if not exists
+if 'last_activity' not in st.session_state:
+    st.session_state['last_activity'] = time.time()
+# Reset last activity on any interaction
+st.session_state['last_activity'] = time.time()
+
+# Check idle timeout (10 minutes = 600 seconds)
+if authentication_status:
+    if time.time() - st.session_state['last_activity'] > 600:
+        authenticator.logout()
+        st.warning('Session timed out due to inactivity. Please log in again.')
+        st.stop()
+
+if authentication_status == False:
+    st.error('Username/password is incorrect')
+    st.stop()
+if authentication_status == None:
+    st.warning('Please enter your username and password')
+    st.stop()
+
+# --- Main App (only after login) ---
+authenticator.logout('Logout')
 
 # Title and description
 st.title("📈 OHLCV Data Viewer")
